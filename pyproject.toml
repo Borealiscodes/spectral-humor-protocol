@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spectral-humor-protocol"
+version = "0.1.0"
+description = "Dual-runtime (zero-dependency Python + zero-allocation Julia) spectral humor eigenmode router and Dream-Lane sovereignty governor."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Borealis Serenity Hedling" }
+]
+dependencies = []
