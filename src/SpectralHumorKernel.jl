@@ -6,6 +6,7 @@ using StaticArrays
 export modal_coupling_operator,
        qr_isometric_basis,
        chromatic_loop_step,
+       damped_loop_step,
        governed_modal_step
 
 """
@@ -51,8 +52,9 @@ end
                         M::SMatrix{N, N, Float64},
                         tau_safe::Float64 = 0.96) -> Tuple{SVector{N, Float64}, Float64, Bool}
 
-Advance expressive state x_{n+1} = M * x_n + u_n while enforcing the Dream-Lane
-spectral radius ceiling ρ(M) <= tau_safe. Executes with 0 B heap allocation.
+Advance expressive state x_{n+1} = M_eff * x_n + u_n while enforcing the Dream-Lane
+spectral radius ceiling ρ(M_eff) <= tau_safe via uniform radial scaling (preserving
+complex eigenmode phase angles). Executes with 0 B heap allocation.
 """
 function governed_modal_step(
     x::SVector{N, Float64},
@@ -60,7 +62,7 @@ function governed_modal_step(
     M::SMatrix{N, N, Float64},
     tau_safe::Float64 = 0.96,
 ) where {N}
-    # Frobenius / induced-norm upper bound & power-iteration spectral radius estimate
+    # Power-iteration spectral radius estimate
     v = SVector{N, Float64}(ntuple(i -> 1.0 / sqrt(Float64(N)), Val(N)))
     for _ in 1:8
         Mv = M * v
@@ -69,14 +71,8 @@ function governed_modal_step(
     end
     rho_est = norm(M * v)
 
-    damped = false
-    M_eff = M
-    if rho_est > tau_safe
-        damped = true
-        scale = tau_safe / rho_est
-        I_N = SMatrix{N, N, Float64}(I)
-        M_eff = I_N + scale .* (M - I_N)
-    end
+    damped = rho_est > tau_safe
+    M_eff = damped ? (tau_safe / rho_est) .* M : M
 
     x_next = M_eff * x + u
     return (x_next, rho_est, damped)
@@ -86,25 +82,30 @@ end
     chromatic_loop_step(x0::SVector{N, Float64},
                         M::SMatrix{N, N, Float64},
                         K::Int = 16,
-                        tol::Float64 = 1e-6) -> Tuple{SVector{N, Float64}, Bool}
+                        tol::Float64 = 1e-6,
+                        tau_safe::Float64 = 0.96) -> Tuple{SVector{N, Float64}, Bool}
 
-Iterate closed chromatic loop x_{k+1} = M * x_k over K cycles and certify
-drift-neutral convergence ||x_K - x_{K-1}||_2 < tol.
+Iterate closed damped feedback loop x_{k+1} = M_eff * x_k over K cycles under
+`governed_modal_step` and certify drift-neutral convergence ||x_K - x_{K-1}||_2 < tol.
 """
 function chromatic_loop_step(
     x0::SVector{N, Float64},
     M::SMatrix{N, N, Float64},
     K::Int = 16,
     tol::Float64 = 1e-6,
+    tau_safe::Float64 = 0.96,
 ) where {N}
     x_prev = x0
     x_curr = x0
+    u_zero = zero(SVector{N, Float64})
     for _ in 1:K
         x_prev = x_curr
-        x_curr = M * x_prev
+        x_curr, _, _ = governed_modal_step(x_prev, u_zero, M, tau_safe)
     end
     converged = norm(x_curr - x_prev) < tol
     return (x_curr, converged)
 end
+
+const damped_loop_step = chromatic_loop_step
 
 end # module
